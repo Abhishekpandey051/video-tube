@@ -9,12 +9,13 @@ import jwt from "jsonwebtoken";
 const generateAccessAndRefereshToken = async (userId) => {
   try {
     const user = await User.findById(userId);
-    const accessToken = user.generateAccessToken();
-    const refereshToken = user.generateRefreshToken();
+    const accessToken = await user.generateAccessToken();
+    // const refressToken = await user.generateRefreshToken();
+    console.log("ACCESS AND REFRESH TOKEN", accessToken)
 
-    user.refressToken = refereshToken;
+    user.refressToken = refressToken;
     await user.save({ validateBeforeSave: false });
-    return { accessToken, refereshToken };
+    return { accessToken, refressToken };
   } catch (error) {
     throw new ApiError(
       500,
@@ -98,6 +99,7 @@ const registerUser = asyncHandler(async (req, res) => {
 // login API
 const loginUser = asyncHandler(async (req, res) => {
   const { email, username, password } = req.body;
+console.log("email", email);
 
   if (!(email || username)) {
     throw new ApiError(400, "Email or username is required");
@@ -117,7 +119,7 @@ const loginUser = asyncHandler(async (req, res) => {
     throw new ApiError(401, "Invalid user crendential");
   }
 
-  const { accessToken, refereshToken } = await generateAccessAndRefereshToken(
+  const { accessToken, refressToken } = await generateAccessAndRefereshToken(
     user._id
   );
 
@@ -133,11 +135,11 @@ const loginUser = asyncHandler(async (req, res) => {
   return res
     .status(200)
     .cookie("accessToken", accessToken, options)
-    .cookie("refressToken", refereshToken, options)
+    .cookie("refressToken", refreshAccessToke, options)
     .json(
       new ApiResponse(
         200,
-        { user: loggedInUser, accessToken, refereshToken },
+        { user: loggedInUser, accessToken, refressToken },
         "User loggedIn successfully"
       )
     );
