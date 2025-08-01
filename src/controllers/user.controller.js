@@ -1,64 +1,90 @@
 import { asyncHandler } from "../utils/asyncHandler.js";
-import {ApiError} from "../utils/ApiError.js"
-import { User } from "../model/user.model.js"
+import { ApiError } from "../utils/ApiError.js";
+import { User } from "../model/user.model.js";
 import { uploadOnCloudinary } from "../utils/cloudinary.js";
 import { ApiResponse } from "../utils/ApiResponse.js";
+import validator from "validator";
 
-const registerUser = asyncHandler(async(req, res) => {
-    const {username, email, fullname, password} = req.body
+const registerUser = asyncHandler(async (req, res) => {
+  const { username, email, fullname, password } = req.body;
 
-    if([username,email,password,fullname].some((field) => field?.trim() === "")){
-        throw new ApiError(400, "All fields are required")
-    } // we can also validate email with correct order... w'll do later
+  if (
+    [username, email, password, fullname].some((field) => field?.trim() === "")
+  ) {
+    throw new ApiError(400, "All fields are required");
+  } // we can also validate email with correct order... w'll do later
 
-    const existedUser = User.find({
-        $or: [{email},{username}]
-    })
-    
-    if(existedUser){
-        throw new ApiError(409, "User with emai or username already exists")
-    }
+  if (!validator.isEmail(email)) {
+    throw new ApiError(300, "Please enter gmail in correct order");
+  }
 
-    // check file uploaded on local
-    const avatarLocalPath = req.files?.avatar[0]?.path;
-    const coverImageLocalPath = req.files.coverImage[0].path;
-    if(!avatarLocalPath){
-        throw new ApiError(400, "Avatar file is required")
-    }
+  const existedUser = await User.findOne({
+    $or: [{ email }, { username }],
+  });
 
-    // upload local file on cloudinary
-    const avatar = await uploadOnCloudinary(avatarLocalPath);
-    const coverImage = await uploadOnCloudinary(coverImageLocalPath);
+  if (existedUser) {
+    throw new ApiError(409, "User with email or username already exists");
+  }
 
-    // check avatar successfull uploaded on cloud 
+  // check file uploaded on local
+  const avatarLocalPath = req.files?.avatar[0]?.path;
+  const coverImageLocalPath = req.files.coverImage[0].path;
+  
+  if (!avatarLocalPath) {
+    throw new ApiError(400, "Avatar file is required");
+  }
 
-    if(!avatar){
-        throw new ApiError(400, "Avatar file is reuired")
-    }
+  // upload local file on cloudinary
+  const avatar = await uploadOnCloudinary(avatarLocalPath);
+  const coverImage = await uploadOnCloudinary(coverImageLocalPath);
 
-    User.create({
-        fullname,
-        email,
-        password,
-        username: username.toLowerCase(),
-        avatar: avatar.url,
-        coverImage: coverImage.url || "",
-    })
+  // check avatar successfull uploaded on cloud
 
-    // check if user register, get that user in res, remove password and refreshtoke of that user
+  if (!avatar) {
+    throw new ApiError(400, "Avatar file is reuired");
+  }
 
-    const createdUser = await User.findById(User._id).select(
-        "-password -refreshToken"
-    )
+  const user = await User.create({
+    fullname,
+    email,
+    password,
+    username: username.toLowerCase(),
+    avatar: avatar.url,
+    coverImage: coverImage.url || "",
+  });
 
-    if(!createdUser){
-        throw new ApiError(500, "Someting went wrong while registering the user")
-    }
+  // check if user register, get that user in res, remove password and refreshtoke of that user
 
-    return res.status(201).json(
-        new ApiResponse(200, createdUser, "User register successfully")
-    )
-    
-})
+  const createdUser = await User.findById(user._id).select(
+    "-password -refressToken"
+  );
 
-export {registerUser}
+  if (!createdUser) {
+    throw new ApiError(500, "Someting went wrong while registering the user");
+  }
+
+  return res
+    .status(201)
+    .json(new ApiResponse(200, createdUser, "User register successfully"));
+});
+
+const userLogin = asyncHandler(async (req, res) => {
+  const { email, password } = req.body;
+  if ([email, password].some((field) => field?.trim() === "")) {
+    throw new ApiError(300, "All fields are reuired");
+  }
+
+  if(!validator.isEmail(email) && validator.isStrongPassword(password)){
+    throw new ApiError(500, "Please enter correct amail or password")
+  }
+
+  const existedUser = await User.findOne({email: User.email});
+  
+  if (!existedUser) {
+    throw new ApiError(500, "Something went wrong");
+  }
+
+  return res.status(200).json(new ApiResponse(200, existedUser, "Login successfull"));
+});
+
+export { registerUser, userLogin };
