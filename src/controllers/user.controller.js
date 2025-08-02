@@ -134,7 +134,7 @@ console.log("email", email);
   return res
     .status(200)
     .cookie("accessToken", accessToken, options)
-    .cookie("refressToken", refreshAccessToke, options)
+    .cookie("refressToken", refressToken, options)
     .json(
       new ApiResponse(
         200,
@@ -172,20 +172,21 @@ const logoutUser = asyncHandler(async (req, res) => {
 //matching refreshToken from db to user token expire - API
 
 const refreshAccessToke = asyncHandler(async (req, res) => {
-  const incommingToken = req.cookies.refereshToken || req.body.accessToken;
+  const incommingToken = req.cookies.refressToken || req.body.accessToken;
+  
   if (!incommingToken) {
     throw new ApiError(401, "Unauthorized token");
   }
   try {
     const descodedToken = jwt.verify(
       incommingToken,
-      process.env.REFRESS_TOKEN_SCRET
+      process.env.REFRESH_TOKEN_SECRET
     );
   
     const user = await User.findById(descodedToken._id).select(
-      "-password -refressToken"
+      "-password"
     );
-  
+    
     if (!user) {
       throw new ApiError(401, "Invalid refresh token");
     }
