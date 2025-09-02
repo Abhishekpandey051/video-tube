@@ -3,7 +3,8 @@ import { Video } from "../model/video.model.js";
 import { isValidObjectId, mongoose } from "mongoose";
 import { ApiError } from "../utils/ApiError.js";
 import { ApiResponse } from "../utils/ApiResponse.js";
-import { uploadOnCloudinary } from "../utils/cloudinary.js";
+import { uploadOnCloudinary, deleteOnCloudinary } from "../utils/cloudinary.js";
+import { User } from "../model/user.model.js"
 
 // get all video - API
 const getAllVideo = asyncHandler(async (req, res) => {
@@ -122,8 +123,14 @@ const publishVideo = asyncHandler(async (req, res) => {
     owner: req.user._id,
     isPublished: false,
     duration: videoFile?.duration,
-    videoFile: videoFile?.url,
-    thumbnail: thumbnail?.url,
+    videoFile: {
+      url: videoFile?.url,
+      public_id: videoFile?.public_id
+    },
+    thumbnail: {
+      url: thumbnail?.url,
+      public_id: thumbnail?.public_id
+    }
   });
 
   const uploadedVideo = await Video.findById(video._id);
@@ -182,7 +189,7 @@ const getVideoById = asyncHandler(async (req,res) => {
             {
               $addFields: {
                 subscriberCount: {
-                  $size: $suscriber
+                  $size: "$subscribers"
                 },
                 isSubscribed: {
                   $cond: {
@@ -228,7 +235,7 @@ const getVideoById = asyncHandler(async (req,res) => {
         },
         {
             $project: {
-                "videoFile.url": 1,
+                videoFile: 1,
                 title: 1,
                 description: 1,
                 views: 1,
@@ -245,16 +252,22 @@ const getVideoById = asyncHandler(async (req,res) => {
     if(!video) {
       throw new ApiError(500, "failed to fetch video")
     }
-    //increment the view if fetched successfull
 
-    await Video.findByIdAndUpdate(videoId, {
-      $inc: {
-        views: 1
-      }
-    })
+    // Ensure views field is number before increment
+    await Video.updateOne(
+    { _id: videoId, views: { $type: "string" } },
+    [{ $set: { views: { $toInt: "$views" } } }]
+  );
+
+  // Increment views
+  await Video.findByIdAndUpdate(
+    videoId,
+    { $inc: { views: 1 } },
+    { new: true }
+  );
 
     // add this video to user watched history
-    await Video.findByIdAndUpdate(userId._id, {
+    await User.findByIdAndUpdate(userId._id, {
       $addToSet: {
         watchHistory: videoId
       }
@@ -267,5 +280,61 @@ const getVideoById = asyncHandler(async (req,res) => {
         );
 });
 
+// update video details like title, description, thumbnail - API
+const updateVedioDetail = asyncHandler(async (req, res) => {
+  const { title, description } = req.body;
+  const { videoId } = req.params;
 
-export { getAllVideo, publishVideo, getVideoById };
+  if (!(title && description)) {
+    throw new ApiError(400, "Title and description are required");
+  }
+
+  if (!isValidObjectId(videoId)) {
+    throw new ApiError(400, "Invalid video Id");
+  }
+
+  const thumbnailLocalPath = req.file?.path;
+
+  const video = await Video.findById(videoId);
+  if (!video) {
+    throw new ApiError(404, "Video not found");
+  }
+
+  if (video.owner.toString() !== req.user._id.toString()) {
+    throw new ApiError(403, "You are not authorized to update this video");
+  }
+
+  // store old thumbnail for deletion later
+  const oldThumbnail = video?.thumbnail;
+
+  // update fields
+  video.title = title;
+  video.description = description;
+
+  // If new thumbnail provided
+  if (thumbnailLocalPath) {
+    const uploadedThumbnail = await uploadOnCloudinary(thumbnailLocalPath); 
+    if (!uploadedThumbnail) {
+      throw new ApiError(500, "Failed to upload new thumbnail");
+    }
+    video.thumbnail = {
+      url: uploadedThumbnail.url,
+      public_id: uploadedThumbnail.public_id,
+    };
+
+    // delete old one from cloudinary
+    if (oldThumbnail?.public_id) {
+      await deleteOnCloudinary(oldThumbnail.public_id, 'image');
+    }
+  }
+
+  await video.save({ validateBeforeSave: false });
+
+  return res
+    .status(200)
+    .json(new ApiResponse(200, video, "Video details updated successfully"));
+});
+
+
+
+export { getAllVideo, publishVideo, getVideoById, updateVedioDetail };
