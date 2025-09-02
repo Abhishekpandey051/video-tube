@@ -1,25 +1,27 @@
 import { Router } from "express";
-import { getAllVideo, publishVideo } from "../controllers/video.controller.js";
+import { getAllVideo, getVideoById, publishVideo } from "../controllers/video.controller.js";
 import { upload } from "../middleware/multer.midleware.js";
+import { verifyJwt } from "../middleware/auth.middleware.js";
 
 const router = Router();
 
-router.route("/watch").get(getAllVideo)
+router.route("/").get(getAllVideo);
 
 router.route("/publish").post(
-    upload.fields(
-        [
-            {
-                name:"videoFile",
-                maxCount: 1
-            },
-            {
-                name: "thumbnail",
-                maxCount: 1
-            }
-        ]
-    ),
-    publishVideo
-)
+  verifyJwt,
+  upload.fields([
+    {
+      name: "videoFile",
+      maxCount: 1,
+    },
+    {
+      name: "thumbnail",
+      maxCount: 1,
+    },
+  ]),
+  publishVideo
+);
 
-export default router
+router.route("/watch/:videoId").get(verifyJwt, getVideoById)
+
+export default router;
