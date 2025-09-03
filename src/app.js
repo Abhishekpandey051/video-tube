@@ -25,10 +25,12 @@ app.use(cookieParser())
 // import router
 import userRegister from './routes/user.routes.js';
 import videoRouter from "./routes/video.route.js";
+import commentRouter from "./routes/comment.routes.js"
 
 
 // routes declare
 app.use("/user", userRegister)
 app.use("/video", videoRouter)
+app.use("/comment", commentRouter)
 
 export {app}
