@@ -4,7 +4,9 @@ import { isValidObjectId, mongoose } from "mongoose";
 import { ApiError } from "../utils/ApiError.js";
 import { ApiResponse } from "../utils/ApiResponse.js";
 import { uploadOnCloudinary, deleteOnCloudinary } from "../utils/cloudinary.js";
-import { User } from "../model/user.model.js"
+import { User } from "../model/user.model.js";
+import { Like } from "../model/like.model.js";
+import { Comment } from "../model/comment.model.js";
 
 // get all video - API
 const getAllVideo = asyncHandler(async (req, res) => {
@@ -125,12 +127,12 @@ const publishVideo = asyncHandler(async (req, res) => {
     duration: videoFile?.duration,
     videoFile: {
       url: videoFile?.url,
-      public_id: videoFile?.public_id
+      public_id: videoFile?.public_id,
     },
     thumbnail: {
       url: thumbnail?.url,
-      public_id: thumbnail?.public_id
-    }
+      public_id: thumbnail?.public_id,
+    },
   });
 
   const uploadedVideo = await Video.findById(video._id);
@@ -144,140 +146,129 @@ const publishVideo = asyncHandler(async (req, res) => {
 });
 
 // get video by id = API
-const getVideoById = asyncHandler(async (req,res) => {
+const getVideoById = asyncHandler(async (req, res) => {
   const { videoId } = req.params;
   const userId = req.user;
-  console.log("Videoid",videoId, "User iD",userId._id)
+  console.log("Videoid", videoId, "User iD", userId._id);
 
-  if(!isValidObjectId(videoId)) {
-    throw new ApiError(400, "Invalid videoId")
+  if (!isValidObjectId(videoId)) {
+    throw new ApiError(400, "Invalid videoId");
   }
-  if(!isValidObjectId(userId._id)) {
-    throw new ApiError(400, "Invalid userId")
+  if (!isValidObjectId(userId._id)) {
+    throw new ApiError(400, "Invalid userId");
   }
 
-  const video = await Video.aggregate(
-    [
-      {
-        $match: {
-        _id: new mongoose.Types.ObjectId(videoId)
-      }
+  const video = await Video.aggregate([
+    {
+      $match: {
+        _id: new mongoose.Types.ObjectId(videoId),
       },
-      {
-        $lookup: {
-          from: "likes",
-          localField: "_id",
-          foreignField: "video",
-          as: "likes"
-        }
+    },
+    {
+      $lookup: {
+        from: "likes",
+        localField: "_id",
+        foreignField: "video",
+        as: "likes",
       },
-      {
-        $lookup: {
-          from: "users",
-          localField: "owner",
-          foreignField: "_id",
-          as: "owner",
-          pipeline: [
-            {
-              $lookup: {
-                from: "subscriptions",
-                localField: "_id",
-                foreignField: "channel",
-                as: "subscribers"
-              }
+    },
+    {
+      $lookup: {
+        from: "users",
+        localField: "owner",
+        foreignField: "_id",
+        as: "owner",
+        pipeline: [
+          {
+            $lookup: {
+              from: "subscriptions",
+              localField: "_id",
+              foreignField: "channel",
+              as: "subscribers",
             },
-            {
-              $addFields: {
-                subscriberCount: {
-                  $size: "$subscribers"
-                },
-                isSubscribed: {
-                  $cond: {
-                    if: {
-                      $in: [
-                        req.user?._id,
-                        "$subscribers.subscriber"
-                      ]
-                    },
-                    then: true,
-                    else: false
-                  }
-                }
-              }
-            },
-            {
-              $project: {
-                username: 1,
-                avatar:1,
-                subscriberCount:1,
-                isSubscribed:1
-              }
-            }
-          ]
-        }
-      },
-       {
+          },
+          {
             $addFields: {
-                likesCount: {
-                    $size: "$likes"
+              subscriberCount: {
+                $size: "$subscribers",
+              },
+              isSubscribed: {
+                $cond: {
+                  if: {
+                    $in: [req.user?._id, "$subscribers.subscriber"],
+                  },
+                  then: true,
+                  else: false,
                 },
-                owner: {
-                    $first: "$owner"
-                },
-                isLiked: {
-                    $cond: {
-                        if: {$in: [req.user?._id, "$likes.likedBy"]},
-                        then: true,
-                        else: false
-                    }
-                }
-            }
-        },
-        {
+              },
+            },
+          },
+          {
             $project: {
-                videoFile: 1,
-                title: 1,
-                description: 1,
-                views: 1,
-                createdAt: 1,
-                duration: 1,
-                comments: 1,
-                owner: 1,
-                likesCount: 1,
-                isLiked: 1
-            }
-        }
-    ]);
+              username: 1,
+              avatar: 1,
+              subscriberCount: 1,
+              isSubscribed: 1,
+            },
+          },
+        ],
+      },
+    },
+    {
+      $addFields: {
+        likesCount: {
+          $size: "$likes",
+        },
+        owner: {
+          $first: "$owner",
+        },
+        isLiked: {
+          $cond: {
+            if: { $in: [req.user?._id, "$likes.likedBy"] },
+            then: true,
+            else: false,
+          },
+        },
+      },
+    },
+    {
+      $project: {
+        videoFile: 1,
+        title: 1,
+        description: 1,
+        views: 1,
+        createdAt: 1,
+        duration: 1,
+        comments: 1,
+        owner: 1,
+        likesCount: 1,
+        isLiked: 1,
+      },
+    },
+  ]);
 
-    if(!video) {
-      throw new ApiError(500, "failed to fetch video")
-    }
+  if (!video) {
+    throw new ApiError(500, "failed to fetch video");
+  }
 
-    // Ensure views field is number before increment
-    await Video.updateOne(
-    { _id: videoId, views: { $type: "string" } },
-    [{ $set: { views: { $toInt: "$views" } } }]
-  );
+  // Ensure views field is number before increment
+  await Video.updateOne({ _id: videoId, views: { $type: "string" } }, [
+    { $set: { views: { $toInt: "$views" } } },
+  ]);
 
   // Increment views
-  await Video.findByIdAndUpdate(
-    videoId,
-    { $inc: { views: 1 } },
-    { new: true }
-  );
+  await Video.findByIdAndUpdate(videoId, { $inc: { views: 1 } }, { new: true });
 
-    // add this video to user watched history
-    await User.findByIdAndUpdate(userId._id, {
-      $addToSet: {
-        watchHistory: videoId
-      }
-    })
+  // add this video to user watched history
+  await User.findByIdAndUpdate(userId._id, {
+    $addToSet: {
+      watchHistory: videoId,
+    },
+  });
 
-    return res
-        .status(200)
-        .json(
-            new ApiResponse(200, video[0], "video details fetched successfully")
-        );
+  return res
+    .status(200)
+    .json(new ApiResponse(200, video[0], "video details fetched successfully"));
 });
 
 // update video details like title, description, thumbnail - API
@@ -313,7 +304,7 @@ const updateVedioDetail = asyncHandler(async (req, res) => {
 
   // If new thumbnail provided
   if (thumbnailLocalPath) {
-    const uploadedThumbnail = await uploadOnCloudinary(thumbnailLocalPath); 
+    const uploadedThumbnail = await uploadOnCloudinary(thumbnailLocalPath);
     if (!uploadedThumbnail) {
       throw new ApiError(500, "Failed to upload new thumbnail");
     }
@@ -324,7 +315,7 @@ const updateVedioDetail = asyncHandler(async (req, res) => {
 
     // delete old one from cloudinary
     if (oldThumbnail?.public_id) {
-      await deleteOnCloudinary(oldThumbnail.public_id, 'image');
+      await deleteOnCloudinary(oldThumbnail.public_id, "image");
     }
   }
 
@@ -335,6 +326,84 @@ const updateVedioDetail = asyncHandler(async (req, res) => {
     .json(new ApiResponse(200, video, "Video details updated successfully"));
 });
 
+// Delete video - API
+const deleteVideo = asyncHandler(async (req, res) => {
+  const { videoId } = req.params;
+  if (!isValidObjectId(videoId)) {
+    throw new ApiError(400, "Invalid video ID");
+  }
+  const video = await Video.findById(videoId);
+  if (!video) {
+    throw new ApiError(404, "Video not found");
+  }
 
+  if (video.owner.toString() !== req.user._id.toString()) {
+    throw new ApiError(403, "You are not authorized to delete this video");
+  }
+  // delete video
+  const deleteVideo = await Video.findByIdAndDelete(videoId);
+  if (!deleteVideo) {
+    throw new ApiError(500, "Failed to delete video");
+  }
 
-export { getAllVideo, publishVideo, getVideoById, updateVedioDetail };
+  // delete video from cloudinary
+  await deleteOnCloudinary(video?.videoFile?.public_id, "video");
+  await deleteOnCloudinary(video?.thumbnail?.public_id, "image");
+
+  // delete like and comment
+  await Like.deleteMany({ video: videoId });
+  await Comment.deleteMany({ video: videoId });
+
+  return res
+    .status(200)
+    .json(new ApiResponse(200, {}, "Video deleted sucessfully"));
+});
+
+// toggle publish status of video - API
+const togglePublishStatus = asyncHandler(async (req, res) => {
+  const { videoId } = req.params;
+  if (!isValidObjectId(videoId)) {
+    throw new ApiError(400, "Invalid video ID");
+  }
+
+  const video = await Video.findById(videoId);
+
+  if (!video) {
+    throw new ApiError(404, "Video not found");
+  }
+  if (video?.owner.toString() !== req.user._id.toString()) {
+    throw new ApiError(403, "You are not authorized to update this video");
+  }
+  const isPublishedVideo = await Video.findByIdAndUpdate(
+    videoId,
+    {
+      $set: {
+        isPublished: !video.isPublished,
+      },
+    },
+    {
+      new: true,
+    }
+  );
+  if (!isPublishedVideo) {
+    throw new ApiError(500, "Failed to update publish status");
+  }
+  return res
+    .status(200)
+    .json(
+      new ApiResponse(
+        200,
+        { isPublished: isPublishedVideo.isPublished },
+        "Publish status updated successfully"
+      )
+    );
+});
+
+export {
+  getAllVideo,
+  publishVideo,
+  getVideoById,
+  updateVedioDetail,
+  deleteVideo,
+  togglePublishStatus,
+};
