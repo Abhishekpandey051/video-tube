@@ -27,12 +27,14 @@ import userRegister from './routes/user.routes.js';
 import videoRouter from "./routes/video.route.js";
 import commentRouter from "./routes/comment.routes.js"
 import likeRouter from "./routes/like.routes.js";
+import tweetRouter from "./routes/tweet.routes.js"
 
 
 // routes declare
 app.use("/user", userRegister)
 app.use("/video", videoRouter)
 app.use("/comment", commentRouter)
-app.use("/like", likeRouter)
+app.use("/like", likeRouter);
+app.use("/tweet", tweetRouter)
 
 export {app}
