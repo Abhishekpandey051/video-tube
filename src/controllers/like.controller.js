@@ -90,12 +90,14 @@ const toggleLikeTweet = asyncHandler(async (req, res) => {
   }
   const likeTweet = await Like.create({
     tweet: tweetId,
-    likedBy: rew.user?._id,
+    likedBy: req.user?._id,
   });
   if (!likeTweet) {
     throw new ApiError(500, "Something went wrong while liking tweet");
   }
-  return res.status(200, { isLiked: true }, "Tweet like successfull");
+  return res
+    .status(200)
+    .json(new ApiResponse(200, { isLiked: true }, "Tweet like successfull"));
 });
 
 // get like like video - API
